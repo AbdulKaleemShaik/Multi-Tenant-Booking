@@ -4,14 +4,14 @@ const bcrypt = require('bcryptjs');
 const userSchema = new mongoose.Schema(
     {
         name: { type: String, required: true, trim: true },
-        email: { type: String, required: true, lowercase: true, trim: true },
+        email: { type: String, required: true, unique: true, lowercase: true, trim: true },
         password: { type: String, required: true, minlength: 6 },
         phone: { type: String },
         avatar: { type: String },
         role: {
-            type: String,
-            enum: ['super_admin', 'tenant_admin', 'staff', 'customer'],
-            default: 'customer',
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Role',
+            required: true
         },
         tenantId: {
             type: mongoose.Schema.Types.ObjectId,
@@ -19,6 +19,11 @@ const userSchema = new mongoose.Schema(
             default: null,
         },
         isActive: { type: Boolean, default: true },
+        reportsTo: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User',
+            default: null,
+        },
         refreshToken: { type: String },
         passwordResetToken: { type: String },
         passwordResetExpires: { type: Date },
@@ -26,8 +31,8 @@ const userSchema = new mongoose.Schema(
     { timestamps: true }
 );
 
-// Compound unique index: email unique per tenant
-userSchema.index({ email: 1, tenantId: 1 }, { unique: true });
+// Remove the compound unique index (email is now globally unique)
+// userSchema.index({ email: 1, tenantId: 1 }, { unique: true });
 
 // Hash password before save
 userSchema.pre('save', async function () {

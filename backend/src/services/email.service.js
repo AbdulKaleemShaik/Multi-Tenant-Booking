@@ -10,7 +10,18 @@ const transporter = nodemailer.createTransport({
     },
 });
 
+// Verify connection configuration on startup
+transporter.verify((error, success) => {
+    if (error) {
+        console.error('❌ Email SMTP Configuration Error:', error.message);
+    } else {
+        console.log('✅ Email Server is ready to send messages');
+    }
+});
+
 const sendBookingConfirmation = async ({ to, customerName, serviceName, staffName, bookingDate, startTime, bookingRef, tenantName }) => {
+    console.log(`📧 Attempting to send confirmation email to: ${to}...`);
+    
     const html = `
     <div style="font-family: Inter, Arial, sans-serif; max-width: 600px; margin: auto; background: #f9fafb; border-radius: 12px; overflow: hidden;">
       <div style="background: linear-gradient(135deg, #6366f1, #8b5cf6); padding: 32px; text-align: center;">
@@ -32,15 +43,22 @@ const sendBookingConfirmation = async ({ to, customerName, serviceName, staffNam
     </div>
   `;
 
-    await transporter.sendMail({
-        from: `"${tenantName}" <${process.env.EMAIL_USER}>`,
-        to,
-        subject: `Booking Confirmed – ${bookingRef}`,
-        html,
-    });
+    try {
+        const info = await transporter.sendMail({
+            from: `"${tenantName}" <${process.env.EMAIL_USER}>`,
+            to,
+            subject: `Booking Confirmed – ${bookingRef}`,
+            html,
+        });
+        console.log('✅ Email sent successfully! MessageID:', info.messageId);
+    } catch (error) {
+        console.error('❌ Email send failed:', error.message);
+        throw error;
+    }
 };
 
 const sendBookingCancellation = async ({ to, customerName, bookingRef, tenantName, reason }) => {
+    console.log(`📧 Attempting to send cancellation email to: ${to}...`);
     const html = `
     <div style="font-family: Inter, Arial, sans-serif; max-width: 600px; margin: auto; background: #f9fafb; border-radius: 12px; overflow: hidden;">
       <div style="background: linear-gradient(135deg, #ef4444, #f97316); padding: 32px; text-align: center;">
@@ -56,12 +74,18 @@ const sendBookingCancellation = async ({ to, customerName, bookingRef, tenantNam
     </div>
   `;
 
-    await transporter.sendMail({
-        from: `"${tenantName}" <${process.env.EMAIL_USER}>`,
-        to,
-        subject: `Booking Cancelled – ${bookingRef}`,
-        html,
-    });
+    try {
+        const info = await transporter.sendMail({
+            from: `"${tenantName}" <${process.env.EMAIL_USER}>`,
+            to,
+            subject: `Booking Cancelled – ${bookingRef}`,
+            html,
+        });
+        console.log('✅ Cancellation email sent! MessageID:', info.messageId);
+    } catch (error) {
+        console.error('❌ Cancellation email failed:', error.message);
+        throw error;
+    }
 };
 
 module.exports = { sendBookingConfirmation, sendBookingCancellation };

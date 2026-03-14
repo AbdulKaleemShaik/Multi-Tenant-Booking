@@ -20,10 +20,34 @@ const bookingSchema = new mongoose.Schema(
             default: 'unpaid',
         },
         totalAmount: { type: Number, required: true },
+        discountAmount: { type: Number, default: 0 },
         currency: { type: String, default: 'INR' },
         notes: { type: String },
         cancellationReason: { type: String },
+        couponId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Coupon',
+            default: null,
+        },
+        selectedAddons: [
+            {
+                name: { type: String, required: true },
+                price: { type: Number, required: true }
+            }
+        ],
+        intakeResponses: [
+            {
+                label: { type: String, required: true },
+                value: { type: mongoose.Schema.Types.Mixed, required: true }
+            }
+        ],
         bookingRef: { type: String, unique: true }, // e.g., BK-20240314-XXXX
+        recurrence: {
+            isRecurring: { type: Boolean, default: false },
+            frequency: { type: String, enum: ['weekly', 'monthly'], default: null },
+            count: { type: Number, default: 0 },
+            parentBookingId: { type: mongoose.Schema.Types.ObjectId, ref: 'Booking', default: null },
+        },
     },
     { timestamps: true }
 );

@@ -4,10 +4,10 @@ import { useDispatch } from 'react-redux';
 import { setCredentials } from '../../store/authSlice';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
-import { Zap, Mail, Lock, Building2, Eye, EyeOff } from 'lucide-react';
+import { Zap, Mail, Lock, Eye, EyeOff } from 'lucide-react';
 
 export default function Login() {
-    const [form, setForm] = useState({ email: '', password: '', tenantSlug: '' });
+    const [form, setForm] = useState({ email: '', password: '' });
     const [showPass, setShowPass] = useState(false);
     const [loading, setLoading] = useState(false);
     const dispatch = useDispatch();
@@ -22,9 +22,10 @@ export default function Login() {
             const { data } = await api.post('/auth/login', form);
             dispatch(setCredentials(data.data));
             toast.success(`Welcome back, ${data.data.user.name}!`);
-            const role = data.data.user.role;
+            const role = data.data.user.role?.name;
             if (role === 'super_admin') navigate('/sadmin');
             else if (role === 'staff') navigate('/staff-dashboard');
+            else if (role === 'customer') navigate('/customer');
             else navigate('/dashboard');
         } catch (err) {
             toast.error(err.response?.data?.message || 'Login failed');
@@ -57,13 +58,6 @@ export default function Login() {
 
                 <div className="card-glass" style={{ padding: 32 }}>
                     <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-                        <div className="form-group">
-                            <label className="form-label">Business Slug <span style={{ color: 'var(--color-text-3)', fontWeight: 400 }}>(leave empty for Super Admin)</span></label>
-                            <div style={{ position: 'relative' }}>
-                                <Building2 size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-3)' }} />
-                                <input className="form-input" style={{ paddingLeft: 38 }} name="tenantSlug" placeholder="your-business-slug" value={form.tenantSlug} onChange={handleChange} />
-                            </div>
-                        </div>
                         <div className="form-group">
                             <label className="form-label">Email Address</label>
                             <div style={{ position: 'relative' }}>

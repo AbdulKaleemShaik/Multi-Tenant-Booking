@@ -9,7 +9,28 @@ const catchAsync = require('../utils/catchAsync');
 const getSchedules = catchAsync(async (req, res, next) => {
     const { staffId } = req.query;
     const query = { tenantId: req.user?.tenantId || req.query.tenantId };
-    if (staffId) query.staffId = staffId;
+    
+    const { getUserPoolCriteria } = require('../utils/userUtils');
+    const poolCriteria = await getUserPoolCriteria(req.user);
+
+    if (poolCriteria) {
+        query.staffId = poolCriteria;
+    }
+
+    if (staffId) {
+        if (poolCriteria) {
+            const poolArray = Array.isArray(poolCriteria) ? poolCriteria : [poolCriteria];
+            const isManagerIn = poolCriteria.$in && poolCriteria.$in.map(id => id.toString()).includes(staffId);
+            if (poolArray.includes(staffId) || isManagerIn) {
+                 query.staffId = staffId;
+            } else {
+                 query.staffId = new require('mongoose').Types.ObjectId();
+            }
+        } else {
+            query.staffId = staffId;
+        }
+    }
+
     const schedules = await Schedule.find(query).populate('staffId', 'name email avatar');
     return sendSuccess(res, 200, 'Schedules fetched', schedules);
 });
@@ -31,7 +52,7 @@ const updateSchedule = catchAsync(async (req, res, next) => {
     const schedule = await Schedule.findOneAndUpdate(
         { _id: req.params.id, tenantId: req.user.tenantId },
         req.body,
-        { new: true }
+        { returnDocument: 'after' }
     );
     if (!schedule) return res.status(404).json({ success: false, message: 'Schedule not found' });
     return sendSuccess(res, 200, 'Schedule updated', schedule);
@@ -58,12 +79,27 @@ const getAvailableSlots = catchAsync(async (req, res, next) => {
     // Get existing bookings for that day
     const startOfDay = new Date(bookingDate.setHours(0, 0, 0, 0));
     const endOfDay = new Date(bookingDate.setHours(23, 59, 59, 999));
-    const existingBookings = await Booking.find({
-        tenantId,
-        staffId,
-        bookingDate: { $gte: startOfDay, $lte: endOfDay },
-        status: { $in: ['pending', 'confirmed'] },
-    }).select('startTime endTime');
+    // List of ranges to block: bookings + absences
+    const [existingBookings, absences] = await Promise.all([
+        Booking.find({
+            tenantId, staffId,
+            bookingDate: { $gte: startOfDay, $lte: endOfDay },
+            status: { $in: ['pending', 'confirmed'] },
+        }).select('startTime endTime'),
+        require('../models/StaffAbsence.model').find({
+            tenantId, staffId,
+            startDate: { $lte: endOfDay },
+            endDate: { $gte: startOfDay }
+        }).select('startTime endTime startDate endDate')
+    ]);
+
+    const blockedRanges = [...existingBookings];
+    absences.forEach(abs => {
+        blockedRanges.push({
+            startTime: abs.startTime || '00:00',
+            endTime: abs.endTime || '23:59'
+        });
+    });
 
     const slots = generateTimeSlots(
         schedule.startTime,
@@ -71,7 +107,7 @@ const getAvailableSlots = catchAsync(async (req, res, next) => {
         schedule.slotDuration || 30,
         schedule.breakStart,
         schedule.breakEnd,
-        existingBookings
+        blockedRanges
     );
 
     return sendSuccess(res, 200, 'Available slots fetched', { slots, schedule });

@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const morgan = require('morgan');
 const connectDB = require('./src/config/db');
 
 // Routes
@@ -12,11 +13,26 @@ const scheduleRoutes = require('./src/routes/schedule.routes');
 const bookingRoutes = require('./src/routes/booking.routes');
 const paymentRoutes = require('./src/routes/payment.routes');
 const analyticsRoutes = require('./src/routes/analytics.routes');
+const couponRoutes = require('./src/routes/coupon.routes');
+const reviewRoutes = require('./src/routes/review.routes');
+const absenceRoutes = require('./src/routes/staffAbsence.routes');
+const waitlistRoutes = require('./src/routes/waitlist.routes');
+const roleRoutes = require('./src/routes/role.routes');
+const seedRoles = require('./src/utils/seedRoles');
 
 const app = express();
 
+const compression = require('compression');
+
+// HTTP Request Logging
+console.log('📝 Initializing API Request Logging...');
+app.use(morgan('dev'));
+app.use(compression()); // Compress all responses
+
 // 1. Connect DB
-connectDB();
+connectDB().then(() => {
+    seedRoles();
+});
 
 // 2. Stripe webhook needs raw body — must come BEFORE express.json
 app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
@@ -36,6 +52,11 @@ app.use('/api/schedules', scheduleRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/coupons', couponRoutes);
+app.use('/api/reviews', reviewRoutes);
+app.use('/api/absences', absenceRoutes);
+app.use('/api/waitlist', waitlistRoutes);
+app.use('/api/roles', roleRoutes);
 
 // 5. Health check
 app.get('/api/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));

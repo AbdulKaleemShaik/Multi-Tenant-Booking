@@ -17,9 +17,13 @@ import SchedulePage from './pages/Admin/SchedulePage';
 import AnalyticsPage from './pages/Admin/AnalyticsPage';
 import BookingsPage from './pages/Admin/BookingsPage';
 import SettingsPage from './pages/Admin/SettingsPage';
+import WaitlistPage from './pages/Admin/WaitlistPage';
 
 // Staff Pages
 import StaffDashboard from './pages/Staff/StaffDashboard';
+
+// Customer Pages
+import CustomerDashboard from './pages/Customer/CustomerDashboard';
 
 // Super Admin
 import SuperAdminDashboard from './pages/SuperAdmin/SuperAdminDashboard';
@@ -35,7 +39,7 @@ import Landing from './pages/Landing';
 const ProtectedRoute = ({ children, roles }) => {
     const { isAuthenticated, user } = useSelector((s) => s.auth);
     if (!isAuthenticated) return <Navigate to="/login" replace />;
-    if (roles && !roles.includes(user?.role)) return <Navigate to="/unauthorized" replace />;
+    if (roles && !roles.includes(user?.role?.name)) return <Navigate to="/unauthorized" replace />;
     return children;
 };
 
@@ -53,7 +57,7 @@ export default function App() {
 
                 {/* Tenant Admin */}
                 <Route path="/dashboard" element={
-                    <ProtectedRoute roles={['tenant_admin']}>
+                    <ProtectedRoute roles={['tenant_admin', 'manager', 'dashboard']}>
                         <DashboardLayout />
                     </ProtectedRoute>
                 }>
@@ -62,6 +66,7 @@ export default function App() {
                     <Route path="staff" element={<StaffPage />} />
                     <Route path="schedules" element={<SchedulePage />} />
                     <Route path="bookings" element={<BookingsPage />} />
+                    <Route path="waitlist" element={<WaitlistPage />} />
                     <Route path="analytics" element={<AnalyticsPage />} />
                     <Route path="settings" element={<SettingsPage />} />
                 </Route>
@@ -74,6 +79,16 @@ export default function App() {
                 }>
                     <Route index element={<StaffDashboard />} />
                     <Route path="bookings" element={<BookingsPage />} />
+                </Route>
+
+                {/* Customer */}
+                <Route path="/customer" element={
+                    <ProtectedRoute roles={['customer']}>
+                        <DashboardLayout />
+                    </ProtectedRoute>
+                }>
+                    <Route index element={<CustomerDashboard />} />
+                    <Route path="history" element={<CustomerDashboard />} /> {/* Reuse for now */}
                 </Route>
 
                 {/* Super Admin */}

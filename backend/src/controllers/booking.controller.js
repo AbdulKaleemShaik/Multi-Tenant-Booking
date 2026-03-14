@@ -2,6 +2,7 @@ const Booking = require('../models/Booking.model');
 const Service = require('../models/Service.model');
 const User = require('../models/User.model');
 const Tenant = require('../models/Tenant.model');
+const Coupon = require('../models/Coupon.model');
 const { sendSuccess, sendError } = require('../utils/apiResponse');
 const { sendBookingConfirmation, sendBookingCancellation } = require('../services/email.service');
 const catchAsync = require('../utils/catchAsync');
@@ -15,7 +16,7 @@ const generateRef = () => {
 // POST /api/bookings
 // POST /api/bookings
 const createBooking = catchAsync(async (req, res, next) => {
-    const { serviceId, staffId, bookingDate, startTime, tenantId, notes } = req.body;
+    const { serviceId, staffId, bookingDate, startTime, tenantId, notes, selectedAddons: addonNames } = req.body;
     if (!serviceId || !staffId || !bookingDate || !startTime) {
         return res.status(400).json({ success: false, message: 'serviceId, staffId, bookingDate, and startTime are required' });
     }
@@ -23,9 +24,27 @@ const createBooking = catchAsync(async (req, res, next) => {
     const service = await Service.findById(serviceId);
     if (!service) return res.status(404).json({ success: false, message: 'Service not found' });
 
+    // Handle addons
+    let extraDuration = 0;
+    let extraPrice = 0;
+    const selectedAddons = [];
+
+    if (addonNames && Array.isArray(addonNames)) {
+        addonNames.forEach(name => {
+            const addon = service.addons.find(a => a.name === name);
+            if (addon) {
+                selectedAddons.push({ name: addon.name, price: addon.price });
+                extraPrice += addon.price;
+                extraDuration += (addon.duration || 0);
+            }
+        });
+    }
+
     // Calculate end time
     const [h, m] = startTime.split(':').map(Number);
-    const endMins = h * 60 + m + service.duration;
+    const buffer = service.bufferTime || 0;
+    const totalDuration = service.duration + extraDuration + buffer;
+    const endMins = h * 60 + m + totalDuration;
     const endTime = `${String(Math.floor(endMins / 60)).padStart(2, '0')}:${String(endMins % 60).padStart(2, '0')}`;
 
     // Check for conflict
@@ -40,14 +59,90 @@ const createBooking = catchAsync(async (req, res, next) => {
     if (conflict) return res.status(409).json({ success: false, message: 'This time slot is already booked' });
 
     const bookingRef = generateRef();
-    const booking = await Booking.create({
-        tenantId, customerId: req.user._id, staffId, serviceId,
-        bookingDate: new Date(bookingDate), startTime, endTime,
-        totalAmount: service.price, currency: service.currency,
-        notes, bookingRef, status: 'pending', paymentStatus: 'unpaid',
-    });
+    let totalAmount = service.price + extraPrice;
+    let discountAmount = 0;
+    let couponId = null;
 
-    // Send confirmation email asynchronously
+    // Apply coupon if provided
+    if (req.body.couponCode) {
+        const coupon = await Coupon.findOne({ 
+            code: req.body.couponCode.toUpperCase(), 
+            tenantId, 
+            isActive: true 
+        });
+
+        if (coupon && new Date() <= coupon.expiryDate && (!coupon.usageLimit || coupon.usedCount < coupon.usageLimit) && totalAmount >= coupon.minBookingAmount) {
+            discountAmount = coupon.type === 'percentage' ? (totalAmount * coupon.value) / 100 : coupon.value;
+            discountAmount = Math.min(discountAmount, totalAmount);
+            couponId = coupon._id;
+            
+            // Increment coupon usage
+            coupon.usedCount += 1;
+            await coupon.save();
+        }
+    }
+
+    const { recurrence } = req.body;
+    let initialBooking;
+    const isRecurring = recurrence?.isRecurring && recurrence?.count > 1 && recurrence?.frequency;
+
+    if (isRecurring) {
+        const bookingsToCreate = [];
+        const baseDate = new Date(bookingDate);
+        const firstBookingRef = generateRef();
+
+        for (let i = 0; i < recurrence.count; i++) {
+            const currentDate = new Date(baseDate);
+            if (recurrence.frequency === 'weekly') {
+                currentDate.setDate(baseDate.getDate() + (i * 7));
+            } else if (recurrence.frequency === 'monthly') {
+                currentDate.setMonth(baseDate.getMonth() + i);
+            }
+
+            // Check for conflict per date
+            const conflict = await Booking.findOne({
+                tenantId, staffId,
+                bookingDate: currentDate,
+                status: { $in: ['pending', 'confirmed'] },
+                $or: [{ startTime: { $lt: endTime }, endTime: { $gt: startTime } }],
+            });
+
+            if (conflict) {
+                return res.status(409).json({ 
+                    success: false, 
+                    message: `Slot conflict on ${currentDate.toDateString()}. Please choose a different sequence or date.` 
+                });
+            }
+
+            bookingsToCreate.push({
+                tenantId, customerId: req.user._id, staffId, serviceId,
+                bookingDate: currentDate, startTime, endTime,
+                totalAmount, discountAmount, currency: service.currency,
+                notes, bookingRef: i === 0 ? firstBookingRef : generateRef(), 
+                status: 'pending', paymentStatus: 'unpaid',
+                couponId, selectedAddons, intakeResponses: req.body.intakeResponses,
+                recurrence: {
+                    isRecurring: true,
+                    frequency: recurrence.frequency,
+                    count: recurrence.count,
+                    parentBookingId: null // We'll link these after first one is created if needed, but for now BK ref links them
+                }
+            });
+        }
+
+        const created = await Booking.insertMany(bookingsToCreate);
+        initialBooking = created[0];
+    } else {
+        initialBooking = await Booking.create({
+            tenantId, customerId: req.user._id, staffId, serviceId,
+            bookingDate: new Date(bookingDate), startTime, endTime,
+            totalAmount, discountAmount, currency: service.currency,
+            notes, bookingRef, status: 'pending', paymentStatus: 'unpaid',
+            couponId, selectedAddons, intakeResponses: req.body.intakeResponses
+        });
+    }
+
+    // Send confirmation email asynchronously (only for the first one for now to avoid spam)
     try {
         const [staff, tenant] = await Promise.all([
             User.findById(staffId).select('name'),
@@ -59,18 +154,18 @@ const createBooking = catchAsync(async (req, res, next) => {
             serviceName: service.name,
             staffName: staff?.name,
             bookingDate, startTime,
-            bookingRef,
+            bookingRef: initialBooking.bookingRef,
             tenantName: tenant?.name,
         });
     } catch (emailErr) {
         console.error('Email send failed:', emailErr.message);
     }
 
-    const populated = await booking.populate([
+    const populated = await initialBooking.populate([
         { path: 'serviceId', select: 'name duration price' },
         { path: 'staffId', select: 'name email' },
     ]);
-    return sendSuccess(res, 201, 'Booking created', populated);
+    return sendSuccess(res, 201, isRecurring ? 'Recurring bookings created' : 'Booking created', populated);
 });
 
 // GET /api/bookings
@@ -79,17 +174,31 @@ const getBookings = catchAsync(async (req, res, next) => {
     const { status, from, to, staffId, page = 1, limit = 20 } = req.query;
     const query = {};
 
-    if (req.user.role === 'customer') {
-        query.customerId = req.user._id;
-    } else if (req.user.role === 'staff') {
-        query.staffId = req.user._id;
-        query.tenantId = req.user.tenantId;
-    } else {
-        query.tenantId = req.user.tenantId;
+    const { getUserPoolCriteria } = require('../utils/userUtils');
+    const poolCriteria = await getUserPoolCriteria(req.user);
+    
+    if (poolCriteria) {
+        query.staffId = poolCriteria;
     }
+    query.tenantId = req.user.tenantId;
 
     if (status) query.status = status;
-    if (staffId && req.user.role !== 'staff') query.staffId = staffId;
+    
+    // If a specific staffId is requested, ensure it's within the allowed pool
+    if (staffId) {
+        if (poolCriteria) {
+            // Intersection of requested staffId and allowed pool
+            const poolArray = Array.isArray(poolCriteria) ? poolCriteria : [poolCriteria];
+            if (poolArray.includes(staffId) || (poolCriteria.$in && poolCriteria.$in.map(id => id.toString()).includes(staffId))) {
+                 query.staffId = staffId;
+            } else {
+                 // Requested staffId is outside authorized pool
+                 query.staffId = new require('mongoose').Types.ObjectId(); // Ensure empty result
+            }
+        } else {
+            query.staffId = staffId;
+        }
+    }
     if (from || to) {
         query.bookingDate = {};
         if (from) query.bookingDate.$gte = new Date(from);
@@ -150,10 +259,31 @@ const updateBookingStatus = catchAsync(async (req, res, next) => {
                 Tenant.findById(booking.tenantId).select('name'),
             ]);
             await sendBookingCancellation({ to: customer.email, customerName: customer.name, bookingRef: booking.bookingRef, tenantName: tenant?.name, reason: cancellationReason });
-        } catch (_) { }
+            
+            // Waitlist Notification Logic
+            const Waitlist = require('../models/Waitlist.model');
+            const waitlistEntries = await Waitlist.find({
+                tenantId: booking.tenantId,
+                staffId: booking.staffId,
+                date: booking.bookingDate,
+                status: 'waiting'
+            }).populate('customerId', 'name email');
+
+            if (waitlistEntries.length > 0) {
+                console.log(`🔔 Notifying ${waitlistEntries.length} waitlist users about opening on ${booking.bookingDate}`);
+                await Waitlist.updateMany(
+                    { _id: { $in: waitlistEntries.map(e => e._id) } },
+                    { status: 'notified', notifiedAt: new Date() }
+                );
+                // Here you would normally send an email to each:
+                // waitlistEntries.forEach(e => sendWaitlistAlert(e.customerId.email, ...))
+            }
+        } catch (err) {
+            console.error('Cancellation/Waitlist error:', err.message);
+        }
     }
 
     return sendSuccess(res, 200, 'Booking status updated', booking);
 });
 
-module.exports = { createBooking, getBookings, getBooking, updateBookingStatus };
+module.exports = { createBooking, getBookings, getBooking, updateBookingStatus, generateRef };

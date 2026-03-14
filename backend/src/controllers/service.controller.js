@@ -23,7 +23,7 @@ const updateService = catchAsync(async (req, res, next) => {
     const service = await Service.findOneAndUpdate(
         { _id: req.params.id, tenantId: req.user.tenantId },
         req.body,
-        { new: true, runValidators: true }
+        { returnDocument: 'after', runValidators: true }
     );
     if (!service) return res.status(404).json({ success: false, message: 'Service not found' });
     return sendSuccess(res, 200, 'Service updated', service);
@@ -34,7 +34,7 @@ const deleteService = catchAsync(async (req, res, next) => {
     const service = await Service.findOneAndUpdate(
         { _id: req.params.id, tenantId: req.user.tenantId },
         { isActive: false },
-        { new: true }
+        { returnDocument: 'after' }
     );
     if (!service) return res.status(404).json({ success: false, message: 'Service not found' });
     return sendSuccess(res, 200, 'Service deleted');

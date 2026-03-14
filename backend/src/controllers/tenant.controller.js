@@ -1,5 +1,6 @@
 const Tenant = require('../models/Tenant.model');
 const User = require('../models/User.model');
+const Role = require('../models/Role.model');
 const { sendSuccess, sendError } = require('../utils/apiResponse');
 const jwt = require('jsonwebtoken');
 const catchAsync = require('../utils/catchAsync');
@@ -30,7 +31,8 @@ const onboardTenant = catchAsync(async (req, res, next) => {
         return res.status(409).json({ success: false, message: 'Email already in use' });
     }
 
-    const admin = await User.create({ name: businessName, email, password, phone, role: 'tenant_admin', tenantId: tenant._id });
+    const adminRole = await Role.findOne({ name: 'tenant_admin' });
+    const admin = await User.create({ name: businessName, email, password, phone, role: adminRole._id, tenantId: tenant._id });
     const { accessToken, refreshToken } = generateTokens(admin._id);
     admin.refreshToken = refreshToken;
     await admin.save();
@@ -53,7 +55,7 @@ const getTenantBySlug = catchAsync(async (req, res, next) => {
 
 // GET /api/tenants/:id (tenant admin gets own tenant)
 const getTenant = catchAsync(async (req, res, next) => {
-    const tenantId = req.user.role === 'super_admin' ? req.params.id : req.user.tenantId;
+    const tenantId = req.user.role?.name === 'super_admin' ? req.params.id : req.user.tenantId;
     const tenant = await Tenant.findById(tenantId);
     if (!tenant) return res.status(404).json({ success: false, message: 'Tenant not found' });
     return sendSuccess(res, 200, 'Tenant fetched', tenant);
@@ -61,11 +63,11 @@ const getTenant = catchAsync(async (req, res, next) => {
 
 // PUT /api/tenants/:id
 const updateTenant = catchAsync(async (req, res, next) => {
-    const tenantId = req.user.role === 'super_admin' ? req.params.id : req.user.tenantId;
+    const tenantId = req.user.role?.name === 'super_admin' ? req.params.id : req.user.tenantId;
     const allowed = ['name', 'phone', 'logo', 'primaryColor', 'description', 'address', 'settings'];
     const updates = {};
     allowed.forEach((f) => { if (req.body[f] !== undefined) updates[f] = req.body[f]; });
-    const tenant = await Tenant.findByIdAndUpdate(tenantId, updates, { new: true, runValidators: true });
+    const tenant = await Tenant.findByIdAndUpdate(tenantId, updates, { returnDocument: 'after', runValidators: true });
     if (!tenant) return res.status(404).json({ success: false, message: 'Tenant not found' });
     return sendSuccess(res, 200, 'Tenant updated', tenant);
 });
