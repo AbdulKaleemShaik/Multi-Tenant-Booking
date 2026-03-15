@@ -18,7 +18,20 @@ BookFlow is not just a booking app; it's a **multi-tenant infrastructure** desig
 - **Database:** MongoDB with **Mongoose Compound Indexing** (multi-tenant isolation).
 - **Security:** Dual-token JWT (Access/Refresh), CSRF Protection, Hierarchical RBAC.
 - **Payments:** Stripe PaymentIntents API + Webhook Synchronization.
-- **DevOps:** Dockerized Architecture (App + DB + Nginx ready).
+- **DevOps:** Docker, Kubernetes (Amazon EKS), AWS ECR, GitHub Actions CI/CD.
+- **Infrastructure:** Provisioned via Terraform.
+
+---
+
+## 🌍 Infrastructure & Deployment
+
+BookFlow is engineered for high availability and enterprise scale using modern cloud-native deployment patterns:
+
+- **Containerization**: Fully Dockerized frontend, backend, and database environments for strict development and production parity.
+- **Kubernetes Orchestration**: Deployed natively on **Amazon EKS (Elastic Kubernetes Service)** to ensure self-healing, zero-downtime rolling updates, and scalable pod management.
+- **AWS Cloud Native**: Leverages AWS VPC boundaries, Elastic Load Balancing (ELB) for traffic distribution, and Amazon ECR for secure container image storage.
+- **GitOps CI/CD**: Fully automated GitHub Actions pipelines that build new Docker images on push, tag them via Git Commit SHA, push to ECR, and trigger automated deployments to the K8s cluster.
+- **Infrastructure as Code**: The entire AWS ecosystem and EKS cluster are provisioned automatically using **Terraform**.
 
 ---
 
