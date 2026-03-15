@@ -39,6 +39,9 @@ const register = catchAsync(async (req, res, next) => {
     user.refreshToken = refreshToken;
     await user.save();
 
+    // Fix: Populate role before sending back to frontend so the route guard works
+    await user.populate('role');
+
     return sendSuccess(res, 201, 'Registration successful', { accessToken, refreshToken, user });
 });
 
