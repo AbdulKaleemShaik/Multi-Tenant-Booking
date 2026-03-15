@@ -1,0 +1,81 @@
+name: Build, Push, and Deploy to EKS
+
+on:
+  push:
+    branches:
+      - master
+
+env:
+  AWS_REGION: ap-south-1
+  EKS_CLUSTER_NAME: bookflow-cluster
+  # Ensure you configure Secrets in your GitHub Repo for these variables
+  ECR_FRONTEND_REPOSITORY: bookflow-frontend
+  ECR_BACKEND_REPOSITORY: bookflow-backend
+
+jobs:
+  build-and-deploy:
+    name: Build and Deploy to EKS
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build, tag, and push Backend Image to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Build Backend docker image
+          docker build -t $ECR_REGISTRY/$ECR_BACKEND_REPOSITORY:$IMAGE_TAG ./backend
+          docker build -t $ECR_REGISTRY/$ECR_BACKEND_REPOSITORY:latest ./backend
+          # Push to ECR
+          docker push $ECR_REGISTRY/$ECR_BACKEND_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_BACKEND_REPOSITORY:latest
+
+      - name: Build, tag, and push Frontend Image to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Build Frontend docker image
+          docker build -t $ECR_REGISTRY/$ECR_FRONTEND_REPOSITORY:$IMAGE_TAG ./frontend
+          docker build -t $ECR_REGISTRY/$ECR_FRONTEND_REPOSITORY:latest ./frontend
+          # Push to ECR
+          docker push $ECR_REGISTRY/$ECR_FRONTEND_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_FRONTEND_REPOSITORY:latest
+
+      - name: Update kubeconfig for EKS
+        run: |
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
+
+      - name: Deploy base Kubernetes Manifests
+        run: |
+          # Apply the persistent items first
+          kubectl apply -f k8s/mongo.yaml
+          kubectl apply -f k8s/backend.yaml
+          kubectl apply -f k8s/frontend.yaml
+
+      - name: Trigger Rolling Update (Deploy New Image)
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Force the deployment to use the exact commit SHA tag
+          kubectl set image deployment/backend backend=$ECR_REGISTRY/$ECR_BACKEND_REPOSITORY:$IMAGE_TAG
+          kubectl set image deployment/frontend frontend=$ECR_REGISTRY/$ECR_FRONTEND_REPOSITORY:$IMAGE_TAG
+          
+          # Verify rollout status
+          kubectl rollout status deployment/backend
+          kubectl rollout status deployment/frontend

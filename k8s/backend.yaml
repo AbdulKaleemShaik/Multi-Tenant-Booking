@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      # EXACTLY 1 container in this pod
+      containers:
+        - name: backend
+          # This placeholder will be dynamically replaced by CI/CD GitHub Actions
+          image: 118903272617.dkr.ecr.ap-south-1.amazonaws.com/bookflow-backend:latest
+          ports:
+            - containerPort: 5000
+          env:
+            - name: PORT
+              value: "5000"
+            - name: MONGO_URI
+              value: "mongodb://mongodb:27017/multi_tenant_booking"
+            - name: JWT_SECRET
+              value: "your_super_secret_jwt_key_change_this_in_production"
+            - name: JWT_REFRESH_SECRET
+              value: "your_super_secret_refresh_key_change_this"
+            - name: JWT_EXPIRES_IN
+              value: "15m"
+            - name: JWT_REFRESH_EXPIRES_IN
+              value: "7d"
+            # Using plain values here for simplicity; properly in AWS SecretsManager/SSM
+            - name: STRIPE_SECRET_KEY
+              value: "sk_test_your_stripe_secret_key_here"
+            - name: STRIPE_WEBHOOK_SECRET
+              value: "whsec_your_stripe_webhook_secret_here"
+            - name: EMAIL_HOST
+              value: "smtp.gmail.com"
+            - name: EMAIL_PORT
+              value: "587"
+            - name: EMAIL_USER
+              value: "abdulkaleem5715@gmail.com"
+            - name: EMAIL_PASS
+              value: "bkrt xyab kzlr whrx"
+            - name: CLIENT_URL
+              # Assuming frontend ingress will be attached here or to LB
+              value: "http://bookflow-frontend.domain.com"
+            - name: NODE_ENV
+              value: "production"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+spec:
+  type: ClusterIP
+  selector:
+    app: backend
+  ports:
+    - protocol: TCP
+      port: 5000
+      targetPort: 5000
