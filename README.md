@@ -111,17 +111,7 @@ node src/utils/seedRoles.js
 node seed-coupon.js
 ```
 
----
 
-## 🏆 Resume-Worthy Engineering Highlights
-
-### 🚀 Performance Optimization
-- **Silent JWT Refresh**: Implemented an Axios interceptor pattern to rotate access tokens in the background, ensuring zero session interruption.
-- **Payload Compression**: Used Gzip/Brotli compression in the Express tier to reduce data transfer size by up to **60%** for large analytics reports.
-
-### 🛡️ Secure System Design
-- **Hierarchical Visibility**: Refactored the core MongoDB queries to use a `userPool` helper, ensuring Managers can only view their direct reports' data—a critical feature for enterprise scalability.
-- **Race Condition Prevention**: Implemented Atomic MongoDB updates for waitlist allocation, preventing double-booking during high-traffic bursts.
 
 ---
 
