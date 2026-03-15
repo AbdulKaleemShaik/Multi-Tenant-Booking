@@ -47,9 +47,9 @@ export default function Landing() {
                     <Link to="/onboard" className="btn btn-primary btn-lg">
                         Launch Your Platform <ArrowRight size={18} />
                     </Link>
-                    <Link to="/book/demo" className="btn btn-secondary btn-lg">
+                    {/* <Link to="/book/demo" className="btn btn-secondary btn-lg">
                         See Live Demo
-                    </Link>
+                    </Link> */}
                 </div>
                 {/* Stats */}
                 <div style={{ display: 'flex', justifyContent: 'center', gap: 48, marginTop: 64, flexWrap: 'wrap' }}>

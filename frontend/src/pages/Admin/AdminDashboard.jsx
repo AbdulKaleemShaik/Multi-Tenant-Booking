@@ -99,7 +99,7 @@ export default function AdminDashboard() {
                 {bookings.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: '40px 0' }}>
                         <Calendar size={40} style={{ color: 'var(--color-text-3)', marginBottom: 12 }} />
-                        <p>No bookings yet. <Link to={`/book/${user?.tenantId}`}>Share your booking link</Link> to get started.</p>
+                        <p>No bookings yet. <Link to={`/book/${user?.tenantId?.slug || user?.tenantId}`}>Share your booking link</Link> to get started.</p>
                     </div>
                 ) : (
                     <div className="table-container">

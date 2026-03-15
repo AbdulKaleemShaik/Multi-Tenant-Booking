@@ -9,8 +9,12 @@ const catchAsync = require('../utils/catchAsync');
 // POST /api/payments/checkout
 const createCheckoutSession = catchAsync(async (req, res, next) => {
     const { bookingId } = req.body;
-    const booking = await Booking.findById(bookingId).populate('serviceId', 'name price currency');
-    if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+    const query = { _id: bookingId, tenantId: req.user.tenantId };
+    if (req.user.role?.name === 'customer') {
+        query.customerId = req.user._id;
+    }
+    const booking = await Booking.findOne(query).populate('serviceId', 'name price currency');
+    if (!booking) return res.status(404).json({ success: false, message: 'Booking not found or not authorized' });
     if (booking.paymentStatus === 'paid') return res.status(400).json({ success: false, message: 'Booking already paid' });
 
     const paymentIntent = await stripe.paymentIntents.create({
@@ -73,8 +77,8 @@ const stripeWebhook = async (req, res) => {
 // POST /api/payments/refund
 const refundPayment = catchAsync(async (req, res, next) => {
     const { bookingId, reason } = req.body;
-    const payment = await Payment.findOne({ bookingId, status: 'succeeded' });
-    if (!payment) return res.status(404).json({ success: false, message: 'No successful payment found for this booking' });
+    const payment = await Payment.findOne({ bookingId, status: 'succeeded', tenantId: req.user.tenantId });
+    if (!payment) return res.status(404).json({ success: false, message: 'No successful payment found for this booking or not authorized' });
 
     const refund = await stripe.refunds.create({
         payment_intent: payment.stripePaymentIntentId,

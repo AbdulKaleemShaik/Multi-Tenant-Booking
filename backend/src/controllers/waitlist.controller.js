@@ -5,7 +5,12 @@ const { format } = require('date-fns');
 
 // POST /api/waitlist/join
 const joinWaitlist = catchAsync(async (req, res) => {
-    const { serviceId, staffId, date, tenantId } = req.body;
+    let { serviceId, staffId, date, tenantId } = req.body;
+    
+    // Force tenant isolation
+    if (req.user.role?.name !== 'super_admin') {
+        tenantId = req.user.tenantId;
+    }
     
     // Check if already on waitlist for this day
     const existing = await Waitlist.findOne({
@@ -69,7 +74,7 @@ const confirmWaitlistEntry = catchAsync(async (req, res) => {
     
     if (!startTime) return sendError(res, 400, 'Time slot is required for confirmation');
 
-    const entry = await Waitlist.findById(id).populate('serviceId staffId customerId');
+    const entry = await Waitlist.findOne({ _id: id, tenantId: req.user.tenantId }).populate('serviceId staffId customerId');
     if (!entry) return sendError(res, 404, 'Waitlist entry not found');
     if (entry.status !== 'waiting' && entry.status !== 'notified') {
         return sendError(res, 400, 'Waitlist entry is already processed');
@@ -194,7 +199,11 @@ const confirmWaitlistEntry = catchAsync(async (req, res) => {
 
 // PUT /api/waitlist/:id/cancel
 const cancelWaitlistEntry = catchAsync(async (req, res) => {
-    const entry = await Waitlist.findById(req.params.id);
+    const query = { _id: req.params.id, tenantId: req.user.tenantId };
+    if (req.user.role?.name === 'customer') {
+        query.customerId = req.user._id;
+    }
+    const entry = await Waitlist.findOne(query);
     if (!entry) return sendError(res, 404, 'Waitlist entry not found');
     entry.status = 'expired';
     await entry.save();

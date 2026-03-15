@@ -52,6 +52,7 @@ const addStaff = catchAsync(async (req, res, next) => {
         tenantId: req.user.tenantId,
         reportsTo: reportsTo || null
     });
+    await staff.populate('role');
     return sendSuccess(res, 201, 'Team member added', staff);
 });
 

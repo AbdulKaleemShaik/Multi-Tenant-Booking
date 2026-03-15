@@ -50,7 +50,13 @@ const getAllTenants = catchAsync(async (req, res, next) => {
 
 // GET /api/tenants/public/:slug — public info for booking portal
 const getTenantBySlug = catchAsync(async (req, res, next) => {
-    const tenant = await Tenant.findOne({ slug: req.params.slug, isActive: true }).select('name slug primaryColor logo description address phone');
+    let tenant = await Tenant.findOne({ slug: req.params.slug, isActive: true }).select('name slug primaryColor logo description address phone');
+    
+    // Fallback for the "See Live Demo" button on the landing page
+    if (!tenant && req.params.slug === 'demo') {
+        tenant = await Tenant.findOne({ isActive: true }).select('name slug primaryColor logo description address phone');
+    }
+
     if (!tenant) return res.status(404).json({ success: false, message: 'Tenant not found' });
     return sendSuccess(res, 200, 'Tenant fetched', tenant);
 });

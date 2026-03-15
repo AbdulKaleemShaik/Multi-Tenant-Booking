@@ -39,8 +39,8 @@ const register = catchAsync(async (req, res, next) => {
     user.refreshToken = refreshToken;
     await user.save();
 
-    // Fix: Populate role before sending back to frontend so the route guard works
-    await user.populate('role');
+    // Fix: Populate role and tenantId before sending back to frontend
+    await user.populate(['role', 'tenantId']);
 
     return sendSuccess(res, 201, 'Registration successful', { accessToken, refreshToken, user });
 });
@@ -60,8 +60,8 @@ const login = catchAsync(async (req, res, next) => {
     user.refreshToken = refreshToken;
     await user.save();
 
-    // Populate role before sending back
-    await user.populate('role');
+    // Populate role and tenantId before sending back
+    await user.populate(['role', 'tenantId']);
 
     return sendSuccess(res, 200, 'Login successful', { accessToken, refreshToken, user });
 });
@@ -98,6 +98,7 @@ const logout = catchAsync(async (req, res, next) => {
 
 // GET /api/auth/me
 const getMe = catchAsync(async (req, res, next) => {
+    await req.user.populate(['role', 'tenantId']);
     return sendSuccess(res, 200, 'User fetched', req.user);
 });
 

@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
 
 // Auth Pages
 import Login from './pages/Auth/Login';
@@ -35,6 +35,10 @@ import BookingConfirm from './pages/Booking/BookingConfirm';
 // Landing
 import Landing from './pages/Landing';
 
+import { useEffect } from 'react';
+import api from './services/api';
+import { updateUser } from './store/authSlice';
+
 // Route Guards
 const ProtectedRoute = ({ children, roles }) => {
     const { isAuthenticated, user } = useSelector((s) => s.auth);
@@ -44,6 +48,16 @@ const ProtectedRoute = ({ children, roles }) => {
 };
 
 export default function App() {
+    const dispatch = useDispatch();
+    const { isAuthenticated } = useSelector((s) => s.auth);
+
+    useEffect(() => {
+        if (isAuthenticated) {
+            api.get('/auth/me')
+               .then(res => dispatch(updateUser(res.data.data)))
+               .catch(err => console.error('Silent auth refresh failed:', err));
+        }
+    }, [isAuthenticated, dispatch]);
     return (
         <BrowserRouter>
             <Routes>

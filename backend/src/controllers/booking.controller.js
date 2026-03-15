@@ -16,9 +16,14 @@ const generateRef = () => {
 // POST /api/bookings
 // POST /api/bookings
 const createBooking = catchAsync(async (req, res, next) => {
-    const { serviceId, staffId, bookingDate, startTime, tenantId, notes, selectedAddons: addonNames } = req.body;
+    let { serviceId, staffId, bookingDate, startTime, tenantId, notes, selectedAddons: addonNames } = req.body;
     if (!serviceId || !staffId || !bookingDate || !startTime) {
         return res.status(400).json({ success: false, message: 'serviceId, staffId, bookingDate, and startTime are required' });
+    }
+
+    // Force tenant isolation (users can only book in their own tenant context)
+    if (req.user.role?.name !== 'super_admin') {
+        tenantId = req.user.tenantId;
     }
 
     const service = await Service.findById(serviceId);
@@ -177,26 +182,26 @@ const getBookings = catchAsync(async (req, res, next) => {
     const { getUserPoolCriteria } = require('../utils/userUtils');
     const poolCriteria = await getUserPoolCriteria(req.user);
     
-    if (poolCriteria) {
-        query.staffId = poolCriteria;
-    }
     query.tenantId = req.user.tenantId;
 
-    if (status) query.status = status;
-    
-    // If a specific staffId is requested, ensure it's within the allowed pool
-    if (staffId) {
+    if (req.user.role?.name === 'customer') {
+        query.customerId = req.user._id;
+    } else {
         if (poolCriteria) {
-            // Intersection of requested staffId and allowed pool
-            const poolArray = Array.isArray(poolCriteria) ? poolCriteria : [poolCriteria];
-            if (poolArray.includes(staffId) || (poolCriteria.$in && poolCriteria.$in.map(id => id.toString()).includes(staffId))) {
-                 query.staffId = staffId;
+            query.staffId = poolCriteria;
+        }
+        // If a specific staffId is requested, ensure it's within the allowed pool
+        if (staffId) {
+            if (poolCriteria) {
+                const poolArray = Array.isArray(poolCriteria) ? poolCriteria : [poolCriteria];
+                if (poolArray.includes(staffId) || (poolCriteria.$in && poolCriteria.$in.map(id => id.toString()).includes(staffId))) {
+                     query.staffId = staffId;
+                } else {
+                     query.staffId = new require('mongoose').Types.ObjectId(); // Ensure empty result
+                }
             } else {
-                 // Requested staffId is outside authorized pool
-                 query.staffId = new require('mongoose').Types.ObjectId(); // Ensure empty result
+                query.staffId = staffId;
             }
-        } else {
-            query.staffId = staffId;
         }
     }
     if (from || to) {
@@ -223,11 +228,27 @@ const getBookings = catchAsync(async (req, res, next) => {
 // GET /api/bookings/:id
 // GET /api/bookings/:id
 const getBooking = catchAsync(async (req, res, next) => {
-    const booking = await Booking.findById(req.params.id)
+    const booking = await Booking.findOne({ _id: req.params.id, tenantId: req.user.tenantId })
         .populate('serviceId', 'name duration price')
         .populate('staffId', 'name email')
         .populate('customerId', 'name email phone');
     if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+
+    // Customer check
+    if (req.user.role?.name === 'customer' && booking.customerId._id.toString() !== req.user._id.toString()) {
+        return res.status(403).json({ success: false, message: 'Not authorized to view this booking' });
+    }
+
+    // Staff/Manager check
+    if (['staff', 'manager'].includes(req.user.role?.name)) {
+        const { getUserPoolCriteria } = require('../utils/userUtils');
+        const poolCriteria = await getUserPoolCriteria(req.user);
+        const poolArray = Array.isArray(poolCriteria) ? poolCriteria : (poolCriteria?.$in || [poolCriteria]);
+        if (poolCriteria && !poolArray.map(id => id.toString()).includes(booking.staffId._id.toString())) {
+            return res.status(403).json({ success: false, message: 'Not authorized to view this booking' });
+        }
+    }
+
     return sendSuccess(res, 200, 'Booking fetched', booking);
 });
 
@@ -240,8 +261,23 @@ const updateBookingStatus = catchAsync(async (req, res, next) => {
         confirmed: ['completed', 'cancelled', 'no_show'],
     };
 
-    const booking = await Booking.findOne({ _id: req.params.id });
+    const booking = await Booking.findOne({ _id: req.params.id, tenantId: req.user.tenantId });
     if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+
+    // Customer check
+    if (req.user.role?.name === 'customer' && booking.customerId.toString() !== req.user._id.toString()) {
+        return res.status(403).json({ success: false, message: 'Not authorized to update this booking' });
+    }
+
+    // Staff/Manager check
+    if (['staff', 'manager'].includes(req.user.role?.name)) {
+        const { getUserPoolCriteria } = require('../utils/userUtils');
+        const poolCriteria = await getUserPoolCriteria(req.user);
+        const poolArray = Array.isArray(poolCriteria) ? poolCriteria : (poolCriteria?.$in || [poolCriteria]);
+        if (poolCriteria && !poolArray.map(id => id.toString()).includes(booking.staffId.toString())) {
+            return res.status(403).json({ success: false, message: 'Not authorized to update this booking' });
+        }
+    }
 
     if (!validTransitions[booking.status]?.includes(status)) {
         return res.status(400).json({ success: false, message: `Cannot transition from '${booking.status}' to '${status}'` });
