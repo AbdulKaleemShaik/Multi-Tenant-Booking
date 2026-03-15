@@ -3,7 +3,7 @@ name: Build, Push, and Deploy to EKS
 on:
   push:
     branches:
-      - master
+      - main
 
 env:
   AWS_REGION: ap-south-1
