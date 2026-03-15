@@ -37,6 +37,8 @@ const onboardTenant = catchAsync(async (req, res, next) => {
     admin.refreshToken = refreshToken;
     await admin.save();
 
+    await admin.populate('role');
+
     return sendSuccess(res, 201, 'Tenant onboarded successfully', { tenant, admin, accessToken, refreshToken });
 });
 
